@@ -16,17 +16,17 @@ const std::string pwm_param_center = "center";
 
 template <typename ServoInterpolatorConf_t,typename coeff_t = double>
 struct ServoInterpolator{
-    using typename angle_t = ServoInterpolatorConf_t::conf_angle_t;
-    using typename pwm_t = ServoInterpolatorConf_t::conf_pwm_t;
+    using angle_t = typename ServoInterpolatorConf_t::conf_angle_t;
+    using pwm_t = typename ServoInterpolatorConf_t::conf_pwm_t;
     enum class Pos{
         EXTREME_RIGHT=0,
         EXTREME_LEFT=1,
         CENTER=2
     };
     
-    inline ServoInterpolator( const ServoInterpolatorConf<angle_t,pwm_t>& _conf) :
+    inline ServoInterpolator( const ServoInterpolatorConf_t& _conf) :
+    conf(_conf)
     {
-        memcpy(&conf,&_conf,sizeof(conf));
         updateCoeffs(); 
     };
     template<Pos pos>
@@ -87,13 +87,13 @@ struct ServoInterpolator{
         coeff_c=((conf.pwmCenter*conf.pwmExtremeLeft)/rd) + ((conf.pwmExtremeRight*conf.pwmExtremeLeft)/cd) + \
         ((conf.pwmExtremeRight*conf.pwmCenter)/ld);
     }
-    ServoInterpolatorConf conf;
+    ServoInterpolatorConf_t conf;
     coeff_t coeff_x2,coeff_x,coeff_c;
 };
 
 struct ServoInterpolatorRosConf
 {
-    const char * pwm_topic, angle_topic;
+    const char * pwm_topic, *angle_topic;
     uint32_t pwm_qs = 100, angle_qs = 100;
     const char* pwm_param;
     const char* stop_updates_param;
@@ -103,46 +103,38 @@ struct ServoInterpolatorRosConf
 template <typename PwmMsg_t, typename AngleMsg_t>
 struct ServoInterpolatorRos
 {
-    using ServoInterpolatorConf_t = ServoInterpolatorConf<AngleMsg_t::_data_type,PwmMsg_t::_data_type>;
+    using _Type = ServoInterpolatorRos< PwmMsg_t, AngleMsg_t>;
+    using ServoInterpolatorConf_t =  ServoInterpolatorConf< typename AngleMsg_t::_data_type,typename PwmMsg_t::_data_type>;
+    using AngleCallbackType = const typename AngleMsg_t::ConstPtr;
+
     ServoInterpolatorRos(ros::NodeHandle &_nh, ServoInterpolatorRosConf& conf,\
     ServoInterpolatorConf_t& interpolator_conf) :\
     nh(_nh),interpolator(interpolator_conf),enable_updates(true),
-    l_extreme_param(conf.l_extreme_param),r_extreme_param(conf.r_extreme_param),c_param(conf.c_param),
-    stop_updates_param(conf.stop_updates_param)
+    pwm_param(conf.pwm_param),stop_updates_param(conf.stop_updates_param)
     {
         pwm_pub = _nh.advertise<PwmMsg_t>(conf.pwm_topic,conf.pwm_qs);
-        angle_sub = _nh.subscribe<AngleMsg_t,ServoInterpolatorRos>(conf.angle_topic,conf.angle_qs,&interpolatorCallback,this);
+        angle_sub = _nh.subscribe(conf.angle_topic,conf.angle_qs,&_Type::interpolatorCallback,this);
     }
     private:
-    // void interpolatorCallback(const AngleMsg_t::ConstPtr& msg){
-    //     pwm_msg.data = 
-    // }
     void updateInterpolator(){
         if(enable_updates){
             std::map<std::string,int> param_dict;
             if(nh.getParam(pwm_param,param_dict))
-                interpolator.setPwms(param_dict[pwm_param_extreme_right],param_dict[pwm_param_extreme_left],param_dict[pwm_param_center])
+                interpolator.setPwms(param_dict[pwm_param_extreme_right],param_dict[pwm_param_extreme_left],param_dict[pwm_param_center]);
             bool stop_updates;
-            if(nh.getParam(stop_updates_param,&stop_updates))
+            if(nh.getParam(stop_updates_param,stop_updates))
                 enable_updates = !stop_updates;
         }
     }
-    void interpolatorCallback(const AngleMsg_t::ConstPtr& angle_msg){
+    void interpolatorCallback(AngleCallbackType& angle_msg){
         updateInterpolator();
-        PwmMsg_t::_data_type& pwm_data = pwm_msg.get()->data;
-        interpolator.interpolate(angle_msg.data,pwm_data);
+        interpolator.interpolate(angle_msg.get()->data,pwm_msg.data);
     }
     ros::NodeHandle& nh;
     PwmMsg_t pwm_msg;
     ros::Subscriber angle_sub;
     ros::Publisher pwm_pub;
     ServoInterpolator<ServoInterpolatorConf_t,double> interpolator;
-    const std::string pwm_param;
+    const std::string pwm_param,stop_updates_param;
     bool enable_updates;
 };
-using i_t = ServoInterpolatorConf<std_msgs::Int8::_data_type,std_msgs::Int16::_data_type>;
-i_t conf;
-ServoInterpolator <i_t>interpolator(conf);
-ServoInterpolatorRosConf confr;
-ros::NodeHandle nh;
-ServoInterpolatorRos <std_msgs::Int16,std_msgs::Int8> iros(nh,confr,conf);
