@@ -77,15 +77,14 @@ struct ServoInterpolator{
     }
     private:
     inline void updateCoeffs(){
-        angle_t ld((conf.angleExtremeLeft-conf.angleExtremeRight)*(conf.angleExtremeLeft-conf.angleCenter));
-        angle_t rd((conf.angleExtremeRight-conf.angleExtremeLeft)*(conf.angleExtremeRight-conf.angleCenter));
-        angle_t cd((conf.angleCenter-conf.angleExtremeRight)*(conf.angleCenter-conf.angleExtremeLeft));
-        coeff_x2=(conf.pwmExtremeRight/rd) + (conf.pwmExtremeLeft/ld) + (conf.pwmCenter/cd);
-        coeff_x=-(((conf.pwmCenter+conf.pwmExtremeLeft)/rd) + ((conf.pwmExtremeRight+conf.pwmExtremeLeft)/cd) + \
-        ((conf.pwmExtremeRight+conf.pwmCenter)/ld));
-        coeff_c=((conf.pwmCenter*conf.pwmExtremeLeft)/rd) + ((conf.pwmExtremeRight*conf.pwmExtremeLeft)/cd) + \
-        ((conf.pwmExtremeRight*conf.pwmCenter)/ld);
-        printf("interpolation coeffs: %f,%f,%f\n",coeff_x2,coeff_x,coeff_c);
+        coeff_t lm(((coeff_t)conf.pwmExtremeLeft)/((conf.angleExtremeLeft-conf.angleExtremeRight)*(conf.angleExtremeLeft-conf.angleCenter)));
+        coeff_t rm(((coeff_t)conf.pwmExtremeRight)/((conf.angleExtremeRight-conf.angleExtremeLeft)*(conf.angleExtremeRight-conf.angleCenter)));
+        coeff_t cm(((coeff_t)conf.pwmCenter)/((conf.angleCenter-conf.angleExtremeRight)*(conf.angleCenter-conf.angleExtremeLeft)));
+        coeff_x2= rm + cm + lm;
+        coeff_x=-(((conf.angleCenter+conf.angleExtremeLeft)*rm) + ((conf.angleExtremeRight+conf.angleExtremeLeft)*cm) + \
+        ((conf.angleExtremeRight+conf.angleCenter)*lm));
+        coeff_c=((conf.angleCenter*conf.angleExtremeLeft)*rm) + ((conf.angleExtremeRight*conf.angleExtremeLeft)*cm) + \
+        ((conf.angleExtremeRight*conf.angleCenter)*lm);
     }
     ServoInterpolatorConf_t conf;
     coeff_t coeff_x2,coeff_x,coeff_c;
@@ -116,10 +115,10 @@ struct ServoInterpolatorRos
     }
     ServoInterpolatorRos() = delete;
 
-    // ~ServoInterpolatorRos(){
-    //     angle_sub.shutdown();
-    //     pwm_pub.shutdown();
-    // }
+    ~ServoInterpolatorRos(){
+        angle_sub.shutdown();
+        pwm_pub.shutdown();
+    }
     private:
     void updateInterpolator(){
         if(enable_updates){
@@ -132,9 +131,7 @@ struct ServoInterpolatorRos
     }
     void interpolatorCallback(AngleCallbackType& angle_msg){
         updateInterpolator();
-        ROS_INFO("recieved angle : %f\n",angle_msg->data);
         interpolator.interpolate(angle_msg->data,pwm_msg.data);
-        ROS_INFO("sending pwm : %f\n",pwm_msg.data);
         pwm_pub.publish(pwm_msg);
     }
     ros::NodeHandle& nh;
