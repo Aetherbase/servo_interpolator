@@ -132,6 +132,7 @@ struct ServoInterpolatorRos
     void interpolatorCallback(AngleCallbackType& angle_msg){
         updateInterpolator();
         interpolator.interpolate(angle_msg.get()->data,pwm_msg.data);
+        pwm_pub.publish(pwm_msg);
     }
     private:
     ros::NodeHandle& nh;
