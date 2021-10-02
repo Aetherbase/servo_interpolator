@@ -1,7 +1,5 @@
 #pragma once
 #include "ros/ros.h"
-#include "std_msgs/Int16.h"
-#include "std_msgs/Int8.h"
 
 template <typename angle_t,typename pwm_t>
 struct ServoInterpolatorConf{
@@ -13,6 +11,7 @@ struct ServoInterpolatorConf{
 const std::string pwm_param_extreme_left = "extreme_left";
 const std::string pwm_param_extreme_right = "extreme_right";
 const std::string pwm_param_center = "center";
+const std::string pwm_stop_updates = "stop_updates";
 
 template <typename ServoInterpolatorConf_t,typename coeff_t = double>
 struct ServoInterpolator{
@@ -96,7 +95,6 @@ struct ServoInterpolatorRosConf
     const char * pwm_topic, *angle_topic;
     uint32_t pwm_qs = 100, angle_qs = 100;
     const char* pwm_param;
-    const char* stop_updates_param;
 
 };
 
@@ -110,31 +108,37 @@ struct ServoInterpolatorRos
     ServoInterpolatorRos(ros::NodeHandle &_nh, ServoInterpolatorRosConf& conf,\
     ServoInterpolatorConf_t& interpolator_conf) :\
     nh(_nh),interpolator(interpolator_conf),enable_updates(true),
-    pwm_param(conf.pwm_param),stop_updates_param(conf.stop_updates_param)
+    pwm_param(conf.pwm_param)
     {
         pwm_pub = _nh.advertise<PwmMsg_t>(conf.pwm_topic,conf.pwm_qs);
         angle_sub = _nh.subscribe(conf.angle_topic,conf.angle_qs,&_Type::interpolatorCallback,this);
+    }
+    ServoInterpolatorRos() = delete;
+
+    ~ServoInterpolatorRos(){
+        angle_sub.shutdown();
+        pwm_pub.shutdown();
     }
     private:
     void updateInterpolator(){
         if(enable_updates){
             std::map<std::string,int> param_dict;
-            if(nh.getParam(pwm_param,param_dict))
+            if(nh.getParam(pwm_param,param_dict)){
                 interpolator.setPwms(param_dict[pwm_param_extreme_right],param_dict[pwm_param_extreme_left],param_dict[pwm_param_center]);
-            bool stop_updates;
-            if(nh.getParam(stop_updates_param,stop_updates))
-                enable_updates = !stop_updates;
+                enable_updates=(param_dict[pwm_stop_updates]<1);
+            }
         }
     }
     void interpolatorCallback(AngleCallbackType& angle_msg){
         updateInterpolator();
         interpolator.interpolate(angle_msg.get()->data,pwm_msg.data);
     }
+    private:
     ros::NodeHandle& nh;
     PwmMsg_t pwm_msg;
     ros::Subscriber angle_sub;
     ros::Publisher pwm_pub;
     ServoInterpolator<ServoInterpolatorConf_t,double> interpolator;
-    const std::string pwm_param,stop_updates_param;
+    const std::string pwm_param;
     bool enable_updates;
 };
